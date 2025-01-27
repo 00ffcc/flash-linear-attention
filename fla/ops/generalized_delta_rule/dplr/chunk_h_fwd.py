@@ -37,7 +37,7 @@ def chunk_dplr_fwd_kernel_h(
     ht,
     offsets,
     chunk_offsets,
-    T: tl.constexpr,
+    T,
     H: tl.constexpr,
     K: tl.constexpr,
     V: tl.constexpr,

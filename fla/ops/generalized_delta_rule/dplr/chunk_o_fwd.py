@@ -32,7 +32,7 @@ def chunk_dplr_fwd_kernel_o(
     o,
     offsets,
     indices,
-    T: tl.constexpr,
+    T,
     H: tl.constexpr,
     K: tl.constexpr,
     V: tl.constexpr,

@@ -30,14 +30,14 @@ from fla.utils import contiguous
     ],
     key=['S', 'BT']
 )
-@triton.jit
+@triton.jit(do_not_specialize=["T"])
 def chunk_rwkv6_fwd_cumsum_kernel(
     s,
     oi,
     oe,
     offsets,
     indices,
-    T: tl.constexpr,
+    T,
     H: tl.constexpr,
     S: tl.constexpr,
     BT: tl.constexpr,

@@ -23,7 +23,7 @@ from fla.ops.common.utils import prepare_chunk_offsets
     ],
     key=['BT', 'BK', 'BV']
 )
-@triton.jit
+@triton.jit(do_not_specialize=["T", "NT"])
 def chunk_dplr_fwd_kernel_h(
     kg,
     v,
@@ -45,7 +45,7 @@ def chunk_dplr_fwd_kernel_h(
     BC: tl.constexpr,
     BK: tl.constexpr,
     BV: tl.constexpr,
-    NT: tl.constexpr,
+    NT,
     USE_INITIAL_STATE: tl.constexpr,
     STORE_FINAL_STATE: tl.constexpr,
     USE_OFFSETS: tl.constexpr,

@@ -21,7 +21,7 @@ import triton.language as tl
     ],
     key=["BC", "K"]
 )
-@triton.jit
+@triton.jit(do_not_specialize=["T"])
 def chunk_dplr_fwd_A_kernel_intra_sub_inter(
     q,
     k,
@@ -138,7 +138,7 @@ def chunk_dplr_fwd_A_kernel_intra_sub_inter(
     ],
     key=["BK", "BT"]
 )
-@triton.jit
+@triton.jit(do_not_specialize=["T"])
 def chunk_dplr_fwd_A_kernel_intra_sub_intra(
     q,
     k,

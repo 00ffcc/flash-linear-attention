@@ -18,7 +18,7 @@ import triton.language as tl
     ],
     key=["BT"]
 )
-@triton.jit
+@triton.jit(do_not_specialize=["T"])
 def fwd_prepare_wy_repr_kernel_chunk32(
     A_ab,
     A_ab_inv, 
@@ -67,7 +67,7 @@ def fwd_prepare_wy_repr_kernel_chunk32(
     ],
     key=["BC"]
 )
-@triton.jit
+@triton.jit(do_not_specialize=["T"])
 def fwd_prepare_wy_repr_kernel_chunk64(
     A_ab,
     A_ab_inv,
@@ -145,7 +145,7 @@ def fwd_prepare_wy_repr_kernel_chunk64(
     ],
     key=["BT", "BK", "BV"]
 )
-@triton.jit
+@triton.jit(do_not_specialize=["T"])
 def fwd_wu_kernel(
     u,
     w,

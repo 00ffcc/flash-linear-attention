@@ -21,7 +21,7 @@ from typing import Optional
     ],
     key=["BT"],
 )
-@triton.jit
+@triton.jit(do_not_specialize=["T"])
 def chunk_dplr_fwd_kernel_o(
     qg,
     v,

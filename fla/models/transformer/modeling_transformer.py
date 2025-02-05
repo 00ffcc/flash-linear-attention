@@ -22,7 +22,6 @@ from fla.models.utils import Cache
 from fla.modules import (FusedCrossEntropyLoss, FusedLinearCrossEntropyLoss,
                          RMSNorm)
 from fla.modules.activations import swiglu_linear
-from fla.modules.layernorm import rms_norm_linear
 
 if TYPE_CHECKING:
     from transformers.processing_utils import Unpack
@@ -39,12 +38,13 @@ class TransformerMLP(nn.Module):
         hidden_ratio: Optional[int] = None,
         intermediate_size: Optional[int] = None,
         hidden_act: str = 'swish',
-        norm_first: bool = True,
-        norm_eps: float = 1e-5
+        norm_eps: float = 1e-5,
+        fuse_swiglu: bool = True
     ) -> TransformerMLP:
         super().__init__()
 
         self.hidden_size = hidden_size
+        self.fuse_swiglu = fuse_swiglu
         # the final number of params is `hidden_ratio * hidden_size^2`
         # `intermediate_size` is chosen to be a multiple of 256 closest to `2/3 * hidden_size * hidden_ratio`
         if hidden_ratio is None:
@@ -54,10 +54,6 @@ class TransformerMLP(nn.Module):
             intermediate_size = 256 * ((intermediate_size + 256 - 1) // 256)
         self.hidden_ratio = hidden_ratio
         self.intermediate_size = intermediate_size
-        self.norm_first = norm_first
-
-        if norm_first:
-            self.norm = RMSNorm(hidden_size=hidden_size, eps=norm_eps)
 
         self.gate_proj = nn.Linear(self.hidden_size, self.intermediate_size * 2, bias=False)
         self.down_proj = nn.Linear(self.intermediate_size, self.hidden_size, bias=False)
@@ -68,12 +64,11 @@ class TransformerMLP(nn.Module):
         x: torch.Tensor,
         **kwargs: Unpack[Any]
     ) -> torch.Tensor:
-        if self.norm_first:
-            x = rms_norm_linear(x, self.norm.weight, self.norm.bias, self.gate_proj.weight, self.gate_proj.bias)
+        gate, y = self.gate_proj(x).chunk(2, -1)
+        if self.fuse_swiglu:
+            return swiglu_linear(gate, y, self.down_proj.weight, self.down_proj.bias)
         else:
-            x = self.gate_proj(x)
-        gate, y = x.chunk(2, -1)
-        return swiglu_linear(gate, y, self.down_proj.weight, self.down_proj.bias)
+            return self.down_proj(self.act_fn(gate) * y)
 
 
 class TransformerBlock(nn.Module):
@@ -82,9 +77,9 @@ class TransformerBlock(nn.Module):
         super().__init__()
 
         self.hidden_size = config.hidden_size
+        self.config = config
 
-        if not config.norm_first:
-            self.attn_norm = RMSNorm(hidden_size=config.hidden_size, eps=config.norm_eps)
+        self.attn_norm = (RMSNorm if config.fuse_norm else nn.RMSNorm)(hidden_size=config.hidden_size, eps=config.norm_eps)
         self.attn = Attention(
             hidden_size=config.hidden_size,
             num_heads=config.num_heads,
@@ -92,19 +87,18 @@ class TransformerBlock(nn.Module):
             window_size=config.window_size,
             rope_theta=config.rope_theta,
             max_position_embeddings=config.max_position_embeddings,
-            norm_first=config.norm_first,
             norm_eps=config.norm_eps,
             layer_idx=layer_idx
         )
-        if not config.norm_first:
-            self.mlp_norm = RMSNorm(hidden_size=config.hidden_size, eps=config.norm_eps)
+
+        self.mlp_norm = (RMSNorm if config.fuse_norm else nn.RMSNorm)(hidden_size=config.hidden_size, eps=config.norm_eps)
         self.mlp = TransformerMLP(
             hidden_size=config.hidden_size,
             hidden_ratio=config.hidden_ratio,
             intermediate_size=config.intermediate_size,
             hidden_act=config.hidden_act,
-            norm_first=config.norm_first,
-            norm_eps=config.norm_eps
+            norm_eps=config.norm_eps,
+            fuse_swiglu=config.fuse_swiglu
         )
 
     def forward(
@@ -129,7 +123,12 @@ class TransformerBlock(nn.Module):
             **kwargs
         )
         if hasattr(self, 'mlp_norm'):
-            hidden_states, residual = self.mlp_norm(hidden_states, residual, True)
+            if self.config.fuse_norm:
+                hidden_states, residual = self.mlp_norm(hidden_states, residual, True)
+            else:
+                hidden_states = residual + hidden_states
+                residual = hidden_states
+                hidden_states = self.mlp_norm(hidden_states)
         else:
             hidden_states = residual + hidden_states
             residual = hidden_states
@@ -153,6 +152,7 @@ class TransformerPreTrainedModel(PreTrainedModel):
     base_model_prefix = 'model'
     supports_gradient_checkpointing = True
     _no_split_modules = ['TransformerBlock']
+    _supports_cache_class = True
 
     def __init__(self, *inputs, **kwargs):
         super().__init__(*inputs, **kwargs)
